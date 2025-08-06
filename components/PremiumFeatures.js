@@ -1,83 +1,114 @@
 'use client';
-import { useContext } from 'react';
-import { useRouter } from 'next/navigation';
-import { UserContext } from '@/context/userContext';
 
-export default function PremiumFeatures({ children, feature, fallback = null }) {
-  const { user } = useContext(UserContext);
-  const router = useRouter();
+import { usePremium } from '@/hooks/usePremium';
+import PremiumGuard from './PremiumGuard';
 
-  // Si l'utilisateur est premium, afficher le contenu
-  if (user.premium) {
-    return children;
-  }
+export default function PremiumFeatures() {
+  const { isPremium, isLoading } = usePremium();
 
-  // Si un fallback est fourni, l'afficher
-  if (fallback) {
-    return fallback;
-  }
-
-  // Fallback par défaut pour les fonctionnalités premium
-  return (
-    <div style={{
-      background: 'linear-gradient(135deg, #e0f7fa 0%, #f7fbff 100%)',
-      borderRadius: 16,
-      padding: 24,
-      textAlign: 'center',
-      border: '2px dashed #1fc8db',
-      margin: '20px 0'
-    }}>
-      <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔒</div>
-      <h3 style={{ fontSize: '1.5rem', fontWeight: 600, marginBottom: '1rem', color: '#000' }}>
-        Fonctionnalité Premium
-      </h3>
-      <p style={{ color: '#666', marginBottom: '1.5rem', fontSize: '1rem' }}>
-        Cette fonctionnalité est réservée aux utilisateurs Premium.
-      </p>
-      
-      <div style={{ 
-        background: '#fff', 
-        borderRadius: 12, 
-        padding: 16, 
-        marginBottom: '1.5rem',
-        border: '1px solid #e0e0e0'
-      }}>
-        <div style={{ fontWeight: 600, color: '#1fc8db', marginBottom: 8 }}>
-          ✨ Débloquez avec Premium :
-        </div>
-        <div style={{ color: '#666', fontSize: '0.9rem' }}>
-          • Prévisions météo sur 5 jours<br/>
-          • Accès aux villes favorites<br/>
-          • Données météo avancées<br/>
-          • Alertes météo personnalisées
-        </div>
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <span className="ml-2 text-gray-600">Chargement...</span>
       </div>
+    );
+  }
 
-      <button
-        onClick={() => router.push('/compte')}
-        style={{
-          background: 'linear-gradient(90deg, #1fc8db 0%, #00bfae 100%)',
-          color: '#fff',
-          border: 'none',
-          borderRadius: 8,
-          padding: '12px 24px',
-          fontWeight: 600,
-          fontSize: 16,
-          cursor: 'pointer',
-          boxShadow: '0 2px 8px 0 rgba(31,200,219,0.3)',
-          transition: 'all 0.2s'
-        }}
-        onMouseOver={(e) => {
-          e.target.style.transform = 'translateY(-2px)';
-          e.target.style.boxShadow = '0 4px 16px 0 rgba(31,200,219,0.4)';
-        }}
-        onMouseOut={(e) => {
-          e.target.style.transform = 'translateY(0)';
-          e.target.style.boxShadow = '0 2px 8px 0 rgba(31,200,219,0.3)';
-        }}
-      >
-        Passer à Premium
-      </button>
+  return (
+    <div className="space-y-6">
+      {/* Fonctionnalité Premium 1 */}
+      <PremiumGuard>
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            🌤️ Prévisions sur 5 jours
+          </h3>
+          <p className="text-gray-600 mb-4">
+            Accédez aux prévisions météo détaillées sur 5 jours pour planifier vos activités.
+          </p>
+          <div className="grid grid-cols-5 gap-2 text-sm">
+            {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven'].map((day, index) => (
+              <div key={day} className="text-center p-2 bg-white rounded border">
+                <div className="font-medium">{day}</div>
+                <div className="text-2xl">🌤️</div>
+                <div className="text-xs">22°C</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </PremiumGuard>
+
+      {/* Fonctionnalité Premium 2 */}
+      <PremiumGuard>
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            📊 Données météo avancées
+          </h3>
+          <p className="text-gray-600 mb-4">
+            Informations détaillées sur l'humidité, la pression et la vitesse du vent.
+          </p>
+          <div className="grid grid-cols-3 gap-4 text-sm">
+            <div className="text-center p-3 bg-white rounded border">
+              <div className="text-lg">💧</div>
+              <div className="font-medium">Humidité</div>
+              <div className="text-gray-600">65%</div>
+            </div>
+            <div className="text-center p-3 bg-white rounded border">
+              <div className="text-lg">🌪️</div>
+              <div className="font-medium">Vent</div>
+              <div className="text-gray-600">12 km/h</div>
+            </div>
+            <div className="text-center p-3 bg-white rounded border">
+              <div className="text-lg">📈</div>
+              <div className="font-medium">Pression</div>
+              <div className="text-gray-600">1013 hPa</div>
+            </div>
+          </div>
+        </div>
+      </PremiumGuard>
+
+      {/* Fonctionnalité Premium 3 */}
+      <PremiumGuard>
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            ⭐ Favoris illimités
+          </h3>
+          <p className="text-gray-600 mb-4">
+            Ajoutez jusqu'à 50 villes en favoris pour suivre la météo partout.
+          </p>
+          <div className="space-y-2">
+            {['Paris', 'Lyon', 'Marseille', 'Toulouse', 'Nice'].map((city, index) => (
+              <div key={city} className="flex items-center justify-between p-2 bg-white rounded border">
+                <span className="font-medium">{city}</span>
+                <span className="text-sm text-gray-600">22°C 🌤️</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </PremiumGuard>
+
+      {/* Fonctionnalité Premium 4 */}
+      <PremiumGuard>
+        <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            🚀 Support prioritaire
+          </h3>
+          <p className="text-gray-600 mb-4">
+            Bénéficiez d'un support client prioritaire pour toutes vos questions.
+          </p>
+          <div className="bg-white rounded-lg p-4 border">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                <span className="text-green-600 font-bold">✓</span>
+              </div>
+              <div>
+                <div className="font-medium text-gray-900">Support Premium</div>
+                <div className="text-sm text-gray-600">Réponse sous 2h • Priorité maximale</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </PremiumGuard>
     </div>
   );
 }

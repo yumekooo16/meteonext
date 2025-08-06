@@ -1,427 +1,146 @@
 import { NextResponse } from 'next/server';
-import { headers } from 'next/headers';
+import Stripe from 'stripe';
 import { supabase } from '@/lib/supabase/client';
 
-// Initialiser Stripe avec la clé secrète
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-
-// Construire l'URL de base pour les webhooks
-const constructWebhookUrl = () => {
-  const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
-  const host = process.env.VERCEL_URL || 'localhost:3000';
-  return `${protocol}://${host}/api/webhooks/stripe`;
-};
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
 export async function POST(request) {
+  const body = await request.text();
+  const signature = request.headers.get('stripe-signature');
+
+  let event;
+
   try {
-    const body = await request.text();
-    const headersList = await headers();
-    const signature = headersList.get('stripe-signature');
+    event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
+  } catch (err) {
+    console.error('❌ Erreur de signature webhook:', err.message);
+    return NextResponse.json({ error: 'Webhook signature verification failed' }, { status: 400 });
+  }
 
-    if (!signature) {
-      console.error('❌ Signature Stripe manquante');
-      return NextResponse.json(
-        { error: 'Signature manquante' },
-        { status: 400 }
-      );
-    }
+  console.log('📦 Événement Stripe reçu:', event.type);
 
-    let event;
-
-    try {
-      // Vérifier la signature du webhook
-      event = stripe.webhooks.constructEvent(
-        body,
-        signature,
-        process.env.STRIPE_WEBHOOK_SECRET
-      );
-    } catch (err) {
-      console.error('❌ Erreur de signature webhook:', err.message);
-      return NextResponse.json(
-        { error: 'Signature invalide' },
-        { status: 400 }
-      );
-    }
-
-    console.log('📦 Webhook reçu:', {
-      type: event.type,
-      id: event.id,
-      created: new Date(event.created * 1000).toISOString()
-    });
-
-    // Traiter les différents types d'événements
+  try {
     switch (event.type) {
       case 'checkout.session.completed':
         await handleCheckoutSessionCompleted(event.data.object);
         break;
-
-      case 'invoice.payment_succeeded':
-        await handleInvoicePaymentSucceeded(event.data.object);
-        break;
-
+      
       case 'customer.subscription.created':
         await handleSubscriptionCreated(event.data.object);
         break;
-
+      
       case 'customer.subscription.updated':
         await handleSubscriptionUpdated(event.data.object);
         break;
-
+      
       case 'customer.subscription.deleted':
         await handleSubscriptionDeleted(event.data.object);
         break;
-
-      case 'setup_intent.created':
-        console.log('🔧 Setup intent créé:', event.data.object.id);
+      
+      case 'invoice.payment_succeeded':
+        await handleInvoicePaymentSucceeded(event.data.object);
         break;
-
-      case 'setup_intent.succeeded':
-        await handleSetupIntentSucceeded(event.data.object);
+      
+      case 'invoice.payment_failed':
+        await handleInvoicePaymentFailed(event.data.object);
         break;
-
-      case 'setup_intent.canceled':
-        console.log('❌ Setup intent annulé:', event.data.object.id);
-        break;
-
+      
       default:
-        console.log('⚠️ Événement non géré:', event.type);
+        console.log(`⚠️ Événement non géré: ${event.type}`);
     }
 
     return NextResponse.json({ received: true });
-
   } catch (error) {
-    console.error('❌ Erreur webhook Stripe:', error);
+    console.error('❌ Erreur lors du traitement du webhook:', error);
     return NextResponse.json(
-      { error: 'Erreur serveur' },
+      { error: 'Erreur lors du traitement du webhook' },
       { status: 500 }
     );
   }
 }
 
-// Gérer la session de paiement complétée
 async function handleCheckoutSessionCompleted(session) {
-  try {
-    console.log('💰 Session de paiement complétée:', session.id);
+  console.log('✅ Session de paiement complétée:', session.id);
+  
+  const userId = session.metadata?.userId;
+  if (!userId) {
+    console.error('❌ User ID manquant dans les métadonnées');
+    return;
+  }
 
-    // Récupérer les métadonnées de la session
-    const customerEmail = session.customer_details?.email;
-    const userId = session.metadata?.userId;
+  // Mettre à jour le statut premium de l'utilisateur
+  const { error } = await supabase
+    .from('profiles')
+    .update({ 
+      is_premium: true,
+      stripe_customer_id: session.customer,
+      stripe_subscription_id: session.subscription,
+      premium_activated_at: new Date().toISOString()
+    })
+    .eq('id', userId);
 
-    if (!customerEmail && !userId) {
-      console.error('❌ Pas d\'email ou userId dans la session');
-      return;
-    }
-
-    // Trouver l'utilisateur
-    let user;
-    if (userId) {
-      // Utiliser l'ID utilisateur si disponible
-      const { data: { user: foundUser }, error } = await supabase.auth.admin.getUserById(userId);
-      if (error) {
-        console.error('❌ Erreur récupération utilisateur par ID:', error);
-        return;
-      }
-      user = foundUser;
-    } else {
-      // Chercher par email
-      const { data: { users }, error } = await supabase.auth.admin.listUsers();
-      if (error) {
-        console.error('❌ Erreur récupération utilisateurs:', error);
-        return;
-      }
-      user = users.find(u => u.email === customerEmail);
-    }
-
-    if (!user) {
-      console.error('❌ Utilisateur non trouvé:', { customerEmail, userId });
-      return;
-    }
-
-    // Mettre à jour le statut premium
-    await updateUserPremiumStatus(user.id, true, session.id);
-
-    console.log('✅ Statut premium mis à jour pour:', user.email);
-
-  } catch (error) {
-    console.error('❌ Erreur traitement checkout session:', error);
+  if (error) {
+    console.error('❌ Erreur mise à jour profil:', error);
+  } else {
+    console.log('✅ Statut premium activé pour:', userId);
   }
 }
 
-// Gérer le paiement d'invoice réussi
-async function handleInvoicePaymentSucceeded(invoice) {
-  try {
-    console.log('💳 Paiement d\'invoice réussi:', invoice.id);
-
-    const customerId = invoice.customer;
-    const subscriptionId = invoice.subscription;
-
-    if (!customerId) {
-      console.error('❌ Pas de customer ID dans l\'invoice');
-      return;
-    }
-
-    // Récupérer les informations du customer
-    const customer = await stripe.customers.retrieve(customerId);
-    const customerEmail = customer.email;
-
-    if (!customerEmail) {
-      console.error('❌ Pas d\'email dans le customer');
-      return;
-    }
-
-    // Trouver l'utilisateur par email
-    const { data: { users }, error } = await supabase.auth.admin.listUsers();
-    if (error) {
-      console.error('❌ Erreur récupération utilisateurs:', error);
-      return;
-    }
-
-    const user = users.find(u => u.email === customerEmail);
-    if (!user) {
-      console.error('❌ Utilisateur non trouvé:', customerEmail);
-      return;
-    }
-
-    // Mettre à jour le statut premium
-    await updateUserPremiumStatus(user.id, true, invoice.id);
-
-    console.log('✅ Statut premium mis à jour pour:', user.email);
-
-  } catch (error) {
-    console.error('❌ Erreur traitement invoice payment:', error);
-  }
-}
-
-// Gérer la création d'abonnement
 async function handleSubscriptionCreated(subscription) {
-  try {
-    console.log('📅 Abonnement créé:', subscription.id);
-
-    const customerId = subscription.customer;
-    const customer = await stripe.customers.retrieve(customerId);
-    const customerEmail = customer.email;
-
-    if (!customerEmail) {
-      console.error('❌ Pas d\'email dans le customer');
-      return;
-    }
-
-    // Trouver l'utilisateur par email
-    const { data: { users }, error } = await supabase.auth.admin.listUsers();
-    if (error) {
-      console.error('❌ Erreur récupération utilisateurs:', error);
-      return;
-    }
-
-    const user = users.find(u => u.email === customerEmail);
-    if (!user) {
-      console.error('❌ Utilisateur non trouvé:', customerEmail);
-      return;
-    }
-
-    // Mettre à jour le statut premium
-    await updateUserPremiumStatus(user.id, true, subscription.id);
-
-    console.log('✅ Abonnement activé pour:', user.email);
-
-  } catch (error) {
-    console.error('❌ Erreur traitement création abonnement:', error);
-  }
+  console.log('🆕 Abonnement créé:', subscription.id);
+  // Logique supplémentaire si nécessaire
 }
 
-// Gérer la mise à jour d'abonnement
 async function handleSubscriptionUpdated(subscription) {
-  try {
-    console.log('🔄 Abonnement mis à jour:', subscription.id);
+  console.log('🔄 Abonnement mis à jour:', subscription.id);
+  
+  const { error } = await supabase
+    .from('profiles')
+    .update({ 
+      is_premium: subscription.status === 'active',
+      subscription_status: subscription.status
+    })
+    .eq('stripe_subscription_id', subscription.id);
 
-    const customerId = subscription.customer;
-    const customer = await stripe.customers.retrieve(customerId);
-    const customerEmail = customer.email;
-
-    if (!customerEmail) {
-      console.error('❌ Pas d\'email dans le customer');
-      return;
-    }
-
-    // Trouver l'utilisateur par email
-    const { data: { users }, error } = await supabase.auth.admin.listUsers();
-    if (error) {
-      console.error('❌ Erreur récupération utilisateurs:', error);
-      return;
-    }
-
-    const user = users.find(u => u.email === customerEmail);
-    if (!user) {
-      console.error('❌ Utilisateur non trouvé:', customerEmail);
-      return;
-    }
-
-    // Vérifier le statut de l'abonnement
-    const isActive = subscription.status === 'active';
-    await updateUserPremiumStatus(user.id, isActive, subscription.id);
-
-    console.log('✅ Statut premium mis à jour pour:', user.email, 'Status:', subscription.status);
-
-  } catch (error) {
-    console.error('❌ Erreur traitement mise à jour abonnement:', error);
+  if (error) {
+    console.error('❌ Erreur mise à jour abonnement:', error);
   }
 }
 
-// Gérer la suppression d'abonnement
 async function handleSubscriptionDeleted(subscription) {
-  try {
-    console.log('🗑️ Abonnement supprimé:', subscription.id);
+  console.log('🗑️ Abonnement supprimé:', subscription.id);
+  
+  const { error } = await supabase
+    .from('profiles')
+    .update({ 
+      is_premium: false,
+      subscription_status: 'canceled',
+      premium_deactivated_at: new Date().toISOString()
+    })
+    .eq('stripe_subscription_id', subscription.id);
 
-    const customerId = subscription.customer;
-    const customer = await stripe.customers.retrieve(customerId);
-    const customerEmail = customer.email;
-
-    if (!customerEmail) {
-      console.error('❌ Pas d\'email dans le customer');
-      return;
-    }
-
-    // Trouver l'utilisateur par email
-    const { data: { users }, error } = await supabase.auth.admin.listUsers();
-    if (error) {
-      console.error('❌ Erreur récupération utilisateurs:', error);
-      return;
-    }
-
-    const user = users.find(u => u.email === customerEmail);
-    if (!user) {
-      console.error('❌ Utilisateur non trouvé:', customerEmail);
-      return;
-    }
-
-    // Désactiver le statut premium
-    await updateUserPremiumStatus(user.id, false, subscription.id);
-
-    console.log('✅ Statut premium désactivé pour:', user.email);
-
-  } catch (error) {
-    console.error('❌ Erreur traitement suppression abonnement:', error);
+  if (error) {
+    console.error('❌ Erreur désactivation premium:', error);
   }
 }
 
-// Gérer le succès du setup intent
-async function handleSetupIntentSucceeded(setupIntent) {
-  try {
-    console.log('✅ Setup intent réussi:', setupIntent.id);
-
-    const customerId = setupIntent.customer;
-    if (!customerId) {
-      console.log('ℹ️ Pas de customer ID dans le setup intent');
-      return;
-    }
-
-    const customer = await stripe.customers.retrieve(customerId);
-    const customerEmail = customer.email;
-
-    if (!customerEmail) {
-      console.error('❌ Pas d\'email dans le customer');
-      return;
-    }
-
-    // Trouver l'utilisateur par email
-    const { data: { users }, error } = await supabase.auth.admin.listUsers();
-    if (error) {
-      console.error('❌ Erreur récupération utilisateurs:', error);
-      return;
-    }
-
-    const user = users.find(u => u.email === customerEmail);
-    if (!user) {
-      console.error('❌ Utilisateur non trouvé:', customerEmail);
-      return;
-    }
-
-    // Mettre à jour le statut premium
-    await updateUserPremiumStatus(user.id, true, setupIntent.id);
-
-    console.log('✅ Setup intent traité pour:', user.email);
-
-  } catch (error) {
-    console.error('❌ Erreur traitement setup intent:', error);
-  }
+async function handleInvoicePaymentSucceeded(invoice) {
+  console.log('💰 Paiement réussi:', invoice.id);
+  // Logique supplémentaire si nécessaire
 }
 
-// Fonction utilitaire pour mettre à jour le statut premium
-async function updateUserPremiumStatus(userId, isPremium, paymentId) {
-  try {
-    console.log('🔄 Mise à jour statut premium:', { userId, isPremium, paymentId });
+async function handleInvoicePaymentFailed(invoice) {
+  console.log('❌ Paiement échoué:', invoice.id);
+  
+  const { error } = await supabase
+    .from('profiles')
+    .update({ 
+      subscription_status: 'past_due'
+    })
+    .eq('stripe_subscription_id', invoice.subscription);
 
-    // Mettre à jour les métadonnées utilisateur
-    const { data: { user }, error } = await supabase.auth.admin.updateUserById(
-      userId,
-      {
-        user_metadata: { 
-          premium: isPremium,
-          premium_updated_at: new Date().toISOString(),
-          payment_id: paymentId
-        }
-      }
-    );
-
-    if (error) {
-      console.error('❌ Erreur mise à jour métadonnées:', error);
-      return false;
-    }
-
-    // Mettre à jour la table profiles si elle existe
-    try {
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ 
-          is_premium: isPremium,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userId);
-
-      if (profileError) {
-        console.warn('⚠️ Erreur mise à jour table profiles:', profileError);
-      }
-    } catch (profileError) {
-      console.warn('⚠️ Table profiles non disponible:', profileError.message);
-    }
-
-    console.log('✅ Statut premium mis à jour avec succès');
-    return true;
-
-  } catch (error) {
-    console.error('❌ Erreur mise à jour statut premium:', error);
-    return false;
-  }
-}
-
-// Route GET pour tester la configuration webhook
-export async function GET() {
-  try {
-    const webhookUrl = constructWebhookUrl();
-    
-    return NextResponse.json({
-      message: 'Webhook Stripe configuré',
-      webhookUrl,
-      events: [
-        'checkout.session.completed',
-        'invoice.payment_succeeded',
-        'customer.subscription.created',
-        'customer.subscription.updated',
-        'customer.subscription.deleted',
-        'setup_intent.created',
-        'setup_intent.succeeded',
-        'setup_intent.canceled'
-      ],
-      environment: {
-        hasStripeKey: !!process.env.STRIPE_SECRET_KEY,
-        hasWebhookSecret: !!process.env.STRIPE_WEBHOOK_SECRET,
-        nodeEnv: process.env.NODE_ENV
-      }
-    });
-  } catch (error) {
-    return NextResponse.json(
-      { error: 'Erreur configuration webhook' },
-      { status: 500 }
-    );
+  if (error) {
+    console.error('❌ Erreur mise à jour statut paiement:', error);
   }
 } 

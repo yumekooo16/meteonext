@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { stripe } from '@/lib/stripe/client';
+import Stripe from 'stripe';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 export async function POST(request) {
   try {
@@ -7,25 +9,30 @@ export async function POST(request) {
 
     if (!sessionId) {
       return NextResponse.json(
-        { error: 'Session ID requis' },
+        { error: 'Session ID is required' },
         { status: 400 }
       );
     }
 
-    // Récupérer les détails de la session Stripe
-    const session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ['line_items', 'payment_intent']
-    });
+    // Récupérer les détails de la session
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
 
-    // Retourner les informations de la session
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Session not found' },
+        { status: 404 }
+      );
+    }
+
     return NextResponse.json({
-      id: session.id,
+      sessionId: session.id,
       status: session.status,
-      customer_email: session.customer_details?.email,
-      amount_total: session.amount_total,
+      paymentStatus: session.payment_status,
+      customerId: session.customer,
+      subscriptionId: session.subscription,
+      amountTotal: session.amount_total,
       currency: session.currency,
-      payment_status: session.payment_status,
-      line_items: session.line_items?.data || []
+      createdAt: session.created
     });
 
   } catch (error) {

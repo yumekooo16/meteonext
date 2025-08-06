@@ -1,40 +1,44 @@
-import { NextResponse } from 'next/server'
-import { headers } from 'next/headers'
-import { stripe } from '@/lib/stripe/client'
+import { NextResponse } from 'next/server';
+import Stripe from 'stripe';
+import { supabase } from '@/lib/supabase/client';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 export async function POST(request) {
   try {
-    const headersList = await headers()
-    const origin = headersList.get('origin')
-    
-    // Récupérer les données du body
-    const body = await request.json()
-    const { items } = body
+    const { userId } = await request.json();
 
-    // Create Checkout Sessions from body params.
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'User ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Créer une session de paiement Stripe
     const session = await stripe.checkout.sessions.create({
-      line_items: items,
-      mode: 'payment',
-      success_url: `${origin}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/compte?canceled=true`,
-      allow_promotion_codes: true,
-      billing_address_collection: 'auto',
-      customer_creation: 'always',
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: 'price_1OqX7dhhDTzbMTa', // Remplacez par votre price_id réel
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/premium?canceled=true`,
+      customer_email: userId, // Vous pouvez récupérer l'email de l'utilisateur depuis Supabase
       metadata: {
-        // Ajoutez des métadonnées si nécessaire
-        source: 'web_checkout'
-      }
+        userId: userId,
+      },
     });
 
-    return NextResponse.json({ 
-      url: session.url,
-      sessionId: session.id 
-    })
-  } catch (err) {
-    console.error('Erreur Stripe:', err)
+    return NextResponse.json({ sessionId: session.id });
+  } catch (error) {
+    console.error('Erreur lors de la création de la session:', error);
     return NextResponse.json(
-      { error: err.message },
-      { status: err.statusCode || 500 }
-    )
+      { error: 'Erreur lors de la création de la session de paiement' },
+      { status: 500 }
+    );
   }
 }

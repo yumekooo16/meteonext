@@ -1,93 +1,52 @@
 'use client';
-import { useEffect, useState, useContext } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { loadStripe } from '@stripe/stripe-js';
-import { UserContext } from '@/context/userContext';
-import Footer from '@/components/footer';
 
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 
 export default function SuccessClient() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, updatePremiumStatus } = useContext(UserContext);
-  const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const sessionId = searchParams.get('session_id');
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [premiumUpdated, setPremiumUpdated] = useState(false);
 
-  // Premier useEffect : Vérification de la session
   useEffect(() => {
-    const sessionId = searchParams.get('session_id');
-    
-    if (!sessionId) {
-      setError('Aucun ID de session trouvé');
-      setLoading(false);
-      return;
+    if (sessionId) {
+      // Optionnel : vérifier le statut de la session
+      verifySession(sessionId);
+    } else {
+      setIsLoading(false);
     }
+  }, [sessionId]);
 
-    // Vérifier le statut de la session
-    const checkSession = async () => {
-      try {
-        const response = await fetch('/api/verify-session', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ sessionId }),
-        });
+  const verifySession = async (sessionId) => {
+    try {
+      const response = await fetch('/api/verify-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ sessionId }),
+      });
 
-        if (!response.ok) {
-          throw new Error('Erreur lors de la vérification de la session');
-        }
-
-        const sessionData = await response.json();
-        setSession(sessionData);
-        
-        // Si le paiement est réussi et que l'utilisateur n'est pas encore premium
-        if (sessionData.status === 'complete' && user && !user.premium && !premiumUpdated) {
-          try {
-            // Mettre à jour le statut premium
-            const updateResult = await updatePremiumStatus(true);
-            if (updateResult.success) {
-              setPremiumUpdated(true);
-              console.log('Statut premium mis à jour avec succès');
-            } else {
-              console.error('Erreur lors de la mise à jour du statut premium:', updateResult.error);
-            }
-          } catch (err) {
-            console.error('Erreur lors de la mise à jour premium:', err);
-          }
-        }
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
+      if (!response.ok) {
+        throw new Error('Erreur lors de la vérification');
       }
-    };
 
-    checkSession();
-  }, [searchParams, user, premiumUpdated, updatePremiumStatus]);
-
-  // Deuxième useEffect : Redirection automatique
-  useEffect(() => {
-    if (session?.status === 'complete' || (user && user.premium)) {
-      const timeout = setTimeout(() => {
-        router.push('/');
-      }, 4000);
-      return () => clearTimeout(timeout);
+      setIsLoading(false);
+    } catch (err) {
+      console.error('Erreur vérification session:', err);
+      setError(err.message);
+      setIsLoading(false);
     }
-  }, [session, user, router]);
+  };
 
-  // Rendu conditionnel après tous les Hooks
-  if (loading) {
+  if (isLoading) {
     return (
-      <div style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden' }}>
-        <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
-          <div style={{ textAlign: 'center', color: '#fff' }}>
-            <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>⏳</div>
-            <div style={{ fontSize: '1.2rem' }}>Vérification du paiement...</div>
-          </div>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Vérification de votre paiement...</p>
         </div>
       </div>
     );
@@ -95,117 +54,79 @@ export default function SuccessClient() {
 
   if (error) {
     return (
-      <div style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden' }}>
-        <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
-          <div style={{ textAlign: 'center', color: '#fff', maxWidth: 500, padding: '2rem' }}>
-            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>❌</div>
-            <h1 style={{ fontSize: '2rem', marginBottom: '1rem' }}>Erreur</h1>
-            <p style={{ fontSize: '1.1rem', marginBottom: '2rem' }}>{error}</p>
-            <button 
-              onClick={() => router.push('/compte')}
-              style={{
-                background: 'linear-gradient(90deg, #1fc8db 0%, #00bfae 100%)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 8,
-                padding: '12px 24px',
-                fontWeight: 600,
-                fontSize: 16,
-                cursor: 'pointer'
-              }}
-            >
-              Retour au compte
-            </button>
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-100 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto p-6">
+          <div className="text-red-500 mb-4">
+            <svg className="w-16 h-16 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (session?.status === 'complete' || (user && user.premium)) {
-    return (
-      <div style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden' }}>
-        <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
-          <div style={{ 
-            background: '#fff', 
-            borderRadius: 24, 
-            padding: 48, 
-            maxWidth: 500, 
-            textAlign: 'center',
-            boxShadow: '0 4px 24px 0 rgba(0,0,0,0.1)'
-          }}>
-            <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎉</div>
-            <h1 style={{ fontSize: '2.5rem', fontWeight: 600, marginBottom: '1rem', color: '#000' }}>
-              Paiement réussi !
-            </h1>
-            <p style={{ fontSize: '1.2rem', marginBottom: '2rem', color: '#666' }}>
-              Félicitations ! Votre compte a été mis à niveau vers Premium.<br/>
-              <span style={{ color: '#1fc8db', fontWeight: 600 }}>Redirection vers l'accueil...</span>
-            </p>
-            <div style={{ 
-              background: 'linear-gradient(135deg, #e0f7fa 0%, #f7fbff 100%)', 
-              borderRadius: 16, 
-              padding: 24, 
-              marginBottom: '2rem',
-              border: '2px solid #1fc8db'
-            }}>
-              <div style={{ fontSize: '1.1rem', fontWeight: 600, color: '#1fc8db', marginBottom: '0.5rem' }}>
-                ✨ Nouvelles fonctionnalités débloquées
-              </div>
-              <div style={{ color: '#666' }}>
-                • Prévisions météo sur 5 jours<br/>
-                • Accès aux villes favorites<br/>
-                • Données météo avancées
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-              <button 
-                onClick={() => router.push('/ma-ville')}
-                style={{
-                  background: 'linear-gradient(90deg, #1fc8db 0%, #00bfae 100%)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 8,
-                  padding: '12px 24px',
-                  fontWeight: 600,
-                  fontSize: 16,
-                  cursor: 'pointer'
-                }}
-              >
-                Voir ma météo
-              </button>
-              <button 
-                onClick={() => router.push('/compte')}
-                style={{
-                  background: 'transparent',
-                  color: '#1fc8db',
-                  border: '2px solid #1fc8db',
-                  borderRadius: 8,
-                  padding: '12px 24px',
-                  fontWeight: 600,
-                  fontSize: 16,
-                  cursor: 'pointer'
-                }}
-              >
-                Mon compte
-              </button>
-            </div>
-          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">
+            Erreur de vérification
+          </h1>
+          <p className="text-gray-600 mb-6">
+            {error}
+          </p>
+          <Link
+            href="/premium"
+            className="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition duration-200"
+          >
+            Retourner à la page premium
+          </Link>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden' }}>
-      <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
-        <div style={{ textAlign: 'center', color: '#fff' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⏳</div>
-          <h1 style={{ fontSize: '2rem', marginBottom: '1rem' }}>Paiement en cours...</h1>
-          <p style={{ fontSize: '1.1rem' }}>Veuillez patienter pendant que nous finalisons votre transaction.</p>
+    <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center">
+      <div className="text-center max-w-md mx-auto p-6">
+        <div className="text-green-500 mb-4">
+          <svg className="w-16 h-16 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          </svg>
         </div>
+        
+        <h1 className="text-3xl font-bold text-gray-900 mb-4">
+          Paiement réussi !
+        </h1>
+        
+        <p className="text-gray-600 mb-6">
+          Votre abonnement premium a été activé avec succès. 
+          Vous avez maintenant accès à toutes les fonctionnalités avancées.
+        </p>
+
+        <div className="bg-white rounded-lg p-4 mb-6 shadow-sm">
+          <h2 className="font-semibold text-gray-900 mb-2">
+            Votre abonnement
+          </h2>
+          <div className="text-sm text-gray-600 space-y-1">
+            <p>✅ Abonnement Premium Météo</p>
+            <p>✅ Paiement sécurisé par Stripe</p>
+            <p>✅ Renouvellement automatique mensuel</p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <Link
+            href="/"
+            className="block w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition duration-200"
+          >
+            Retourner à l'accueil
+          </Link>
+          
+          <Link
+            href="/compte"
+            className="block w-full bg-gray-200 text-gray-800 px-6 py-3 rounded-lg hover:bg-gray-300 transition duration-200"
+          >
+            Gérer mon compte
+          </Link>
+        </div>
+
+        <p className="text-xs text-gray-500 mt-6">
+          Un email de confirmation vous a été envoyé avec les détails de votre abonnement.
+        </p>
       </div>
-      <Footer />
     </div>
   );
 } 
