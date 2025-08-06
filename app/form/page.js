@@ -1,40 +1,17 @@
-'use client';
-
-import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
-import FormComponent from "@/components/form";
-import AuthGuard from "@/components/AuthGuard";
-import Footer from "@/components/footer";
-import Toast from "@/components/Toast";
+import { Suspense } from 'react';
+import FormClient from './FormClient';
 
 export default function FormPage() {
-  const [showConfirmedToast, setShowConfirmedToast] = useState(false);
-  const searchParams = useSearchParams();
-
-  useEffect(() => {
-    // Vérifier si l'utilisateur vient de confirmer son email
-    const confirmed = searchParams.get('confirmed');
-    if (confirmed === 'true') {
-      setShowConfirmedToast(true);
-    }
-  }, [searchParams]);
-
   return (
-    <AuthGuard requireAuth={false} redirectTo="/">
-      <div data-page="form" className="min-h-screen">
-        <FormComponent />
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Chargement...</p>
+        </div>
       </div>
-      <Footer />
-
-      {/* Toast de confirmation email */}
-      {showConfirmedToast && (
-        <Toast
-          message="✅ Votre email a été confirmé avec succès !"
-          type="success"
-          duration={5000}
-          onClose={() => setShowConfirmedToast(false)}
-        />
-      )}
-    </AuthGuard>
+    }>
+      <FormClient />
+    </Suspense>
   );
 } 

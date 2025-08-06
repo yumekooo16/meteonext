@@ -1,49 +1,22 @@
-'use client';
-
-import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
-import Navbar from "@/components/navbar";
-import MeteoComponent from "@/components/meteo";
-import Footer from "@/components/footer";
-import Toast from "@/components/Toast";
+import { Suspense } from 'react';
+import HomeClient from './HomeClient';
 
 export default function Page() {
-  const [showWelcomeToast, setShowWelcomeToast] = useState(false);
-  const searchParams = useSearchParams();
-
-  useEffect(() => {
-    // Vérifier si l'utilisateur vient de s'inscrire
-    const welcome = searchParams.get('welcome');
-    if (welcome === 'true') {
-      setShowWelcomeToast(true);
-    }
-  }, [searchParams]);
-
   return (
-    <div style={{
-      minHeight: "100vh",
-      display: "flex",
-      flexDirection: "column",
-      position: "relative",
-      overflow: "hidden",
-    }}>
-      <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column" }}>
-        <Navbar />
-        <div style={{ flex: 1 }}>
-          <MeteoComponent />
-        </div>
-        <Footer />
+    <Suspense fallback={
+      <div style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        alignItems: "center",
+        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+      }}>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mb-4"></div>
+        <p className="text-white">Chargement...</p>
       </div>
-
-      {/* Toast de bienvenue */}
-      {showWelcomeToast && (
-        <Toast
-          message="🎉 Bienvenue ! Votre compte a été créé avec succès. Vous êtes maintenant connecté !"
-          type="success"
-          duration={6000}
-          onClose={() => setShowWelcomeToast(false)}
-        />
-      )}
-    </div>
+    }>
+      <HomeClient />
+    </Suspense>
   );
 }
